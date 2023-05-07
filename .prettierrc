@@ -1,0 +1,19 @@
+{
+  "printWidth": 120,
+  "tabWidth": 2,
+  "semi": true,
+  "trailingComma": "all",
+  "singleQuote": false,
+  "useTabs": false,
+  "quoteProps": "as-needed",
+  "bracketSpacing": true,
+  "arrowParens": "avoid",
+  "overrides": [
+    {
+      "files": "contracts/**/*.sol",
+      "options": {
+        "tabWidth": 4
+      }
+    }
+  ]
+}
