@@ -8,10 +8,19 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract Wrapper is ERC721, Ownable {
-    mapping(address => bool) private _allowedTokens;
+error InvalidAddress(address address_);
 
-    constructor() ERC721("Wrapped Token", "WTKN") {}
+contract Wrapper is ERC721, Ownable {
+    uint8 private _protocolFee;
+    address private _uniswapRouterAddress;
+
+    mapping(address => bool) private _allowedTokens;
+    mapping(uint256 => address[]) private _nftToTokens;
+
+    constructor(string memory name, string memory symbol, address uniswapRouterAddress) ERC721(name, symbol) {
+        if (uniswapRouterAddress == address(0)) revert InvalidAddress(uniswapRouterAddress);
+        _uniswapRouterAddress = uniswapRouterAddress;
+    }
 
     function mint() external {}
 
@@ -19,12 +28,21 @@ contract Wrapper is ERC721, Ownable {
 
     function withdraw() external onlyOwner {}
 
+    function setUniswapRouterAddress(address newAddress) external onlyOwner {
+        if (newAddress == address(0)) revert InvalidAddress(newAddress);
+        _uniswapRouterAddress = newAddress;
+    }
+
+    function getUniswapRouterAddress() external view returns (address) {
+        return _uniswapRouterAddress;
+    }
+
     function getTokenAllowance(address token) external view returns (bool) {
         return _allowedTokens[token];
     }
 
     function addAllowedToken(address token) external onlyOwner {
-        // TODO: check if token is ERC20
+        if (token == address(0)) revert InvalidAddress(token);
         _allowedTokens[token] = true;
     }
 
@@ -33,10 +51,9 @@ contract Wrapper is ERC721, Ownable {
     }
 
     function addAllowedTokens(address[] calldata tokens) external onlyOwner {
-        // TODO: check if token is ERC20
-
         uint256 len = tokens.length;
         for (uint256 i = 0; i < len; ) {
+            if (tokens[i] == address(0)) revert InvalidAddress(tokens[i]);
             _allowedTokens[tokens[i]] = true;
 
             unchecked {

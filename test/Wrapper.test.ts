@@ -1,12 +1,10 @@
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
 import hre from "hardhat";
-import { Wrapper } from "../typechain";
+import { Wrapper, Wrapper__factory } from "../typechain";
+import { contractConfig } from "../utils/config";
+import { OwnableErrors, WrapperErrors } from "./errors";
 import { setupWrapperContract } from "./setup";
-
-enum ERRORS {
-  OWNABLE_NOT_OWNER = "Ownable: caller is not the owner",
-}
 
 describe("Wrapper", function () {
   let wrapperContract: Wrapper;
@@ -19,6 +17,75 @@ describe("Wrapper", function () {
 
   beforeEach(async function () {
     wrapperContract = await setupWrapperContract(ownerWallet);
+  });
+
+  describe("constructor", function () {
+    it("fail - uniswapRouterAddress is zero address", async function () {
+      const uniswapRouterAddress = hre.ethers.constants.AddressZero;
+
+      await expect(
+        new Wrapper__factory(ownerWallet).deploy(contractConfig.name, contractConfig.symbol, uniswapRouterAddress),
+      )
+        .to.be.revertedWithCustomError(wrapperContract, WrapperErrors.INVALID_ADDRESS)
+        .withArgs(uniswapRouterAddress);
+    });
+
+    it("success", async function () {
+      const uniswapRouterAddress = hre.ethers.Wallet.createRandom().address;
+
+      const wrapperContract = await new Wrapper__factory(ownerWallet).deploy(
+        contractConfig.name,
+        contractConfig.symbol,
+        uniswapRouterAddress,
+      );
+
+      const name = await wrapperContract.name();
+      expect(name).to.equal(contractConfig.name);
+
+      const symbol = await wrapperContract.symbol();
+      expect(symbol).to.equal(contractConfig.symbol);
+
+      const uniswapRouterAddressAfter = await wrapperContract.getUniswapRouterAddress();
+      expect(uniswapRouterAddressAfter).to.equal(uniswapRouterAddress);
+    });
+  });
+
+  describe("setUniswapRouterAddress", function () {
+    it("fail - not owner", async function () {
+      const actionWallet = notOwnerWallet;
+      const uniswapRouterAddress = hre.ethers.Wallet.createRandom().address;
+
+      await expect(
+        wrapperContract.connect(actionWallet).setUniswapRouterAddress(uniswapRouterAddress),
+      ).to.be.revertedWith(OwnableErrors.OWNABLE_NOT_OWNER);
+    });
+
+    it("fail - uniswapRouterAddress is zero address", async function () {
+      const actionWallet = ownerWallet;
+      const uniswapRouterAddress = hre.ethers.constants.AddressZero;
+
+      await expect(wrapperContract.connect(actionWallet).setUniswapRouterAddress(uniswapRouterAddress))
+        .to.be.revertedWithCustomError(wrapperContract, WrapperErrors.INVALID_ADDRESS)
+        .withArgs(uniswapRouterAddress);
+    });
+
+    it("success", async function () {
+      const actionWallet = ownerWallet;
+      const uniswapRouterAddress = hre.ethers.Wallet.createRandom().address;
+
+      await expect(wrapperContract.connect(actionWallet).setUniswapRouterAddress(uniswapRouterAddress)).not.to.be
+        .reverted;
+
+      const uniswapRouterAddressAfter = await wrapperContract.getUniswapRouterAddress();
+      expect(uniswapRouterAddressAfter).to.equal(uniswapRouterAddress);
+    });
+  });
+
+  describe("getUniswapRouterAddress", function () {
+    it("success", async function () {
+      const uniswapRouterAddress = await wrapperContract.getUniswapRouterAddress();
+      expect(uniswapRouterAddress).to.equal(contractConfig.uniswapRouterAddress);
+    });
   });
 
   describe("getTokenAllowance", function () {
@@ -36,8 +103,17 @@ describe("Wrapper", function () {
       const tokenAddress = hre.ethers.Wallet.createRandom().address;
 
       await expect(wrapperContract.connect(actionWallet).addAllowedToken(tokenAddress)).to.be.revertedWith(
-        ERRORS.OWNABLE_NOT_OWNER,
+        OwnableErrors.OWNABLE_NOT_OWNER,
       );
+    });
+
+    it("fail - token address is zero address", async function () {
+      const actionWallet = ownerWallet;
+      const tokenAddress = hre.ethers.constants.AddressZero;
+
+      await expect(wrapperContract.connect(actionWallet).addAllowedToken(tokenAddress))
+        .to.be.revertedWithCustomError(wrapperContract, WrapperErrors.INVALID_ADDRESS)
+        .withArgs(tokenAddress);
     });
 
     it("success", async function () {
@@ -57,7 +133,7 @@ describe("Wrapper", function () {
       const tokenAddress = hre.ethers.Wallet.createRandom().address;
 
       await expect(wrapperContract.connect(actionWallet).removeAllowedToken(tokenAddress)).to.be.revertedWith(
-        ERRORS.OWNABLE_NOT_OWNER,
+        OwnableErrors.OWNABLE_NOT_OWNER,
       );
     });
 
@@ -80,8 +156,17 @@ describe("Wrapper", function () {
       const tokenAddresses = Array.from({ length: 25 }, () => hre.ethers.Wallet.createRandom().address);
 
       await expect(wrapperContract.connect(actionWallet).addAllowedTokens(tokenAddresses)).to.be.revertedWith(
-        ERRORS.OWNABLE_NOT_OWNER,
+        OwnableErrors.OWNABLE_NOT_OWNER,
       );
+    });
+
+    it("fail - token address is zero address", async function () {
+      const actionWallet = ownerWallet;
+      const tokenAddresses = Array.from({ length: 25 }, () => hre.ethers.constants.AddressZero);
+
+      await expect(wrapperContract.connect(actionWallet).addAllowedTokens(tokenAddresses))
+        .to.be.revertedWithCustomError(wrapperContract, WrapperErrors.INVALID_ADDRESS)
+        .withArgs(tokenAddresses[0]);
     });
 
     it("success", async function () {
@@ -103,7 +188,7 @@ describe("Wrapper", function () {
       const tokenAddresses = Array.from({ length: 25 }, () => hre.ethers.Wallet.createRandom().address);
 
       await expect(wrapperContract.connect(actionWallet).removeAllowedTokens(tokenAddresses)).to.be.revertedWith(
-        ERRORS.OWNABLE_NOT_OWNER,
+        OwnableErrors.OWNABLE_NOT_OWNER,
       );
     });
 
