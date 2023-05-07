@@ -7,8 +7,13 @@ import "hardhat/console.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
 error InvalidAddress(address address_);
+error InvalidArrayLength(uint256 tokenAddressesLength_, uint256 tokenAmountsLength_);
+error TokenNotAllowed(address tokenAddress_);
+error InvalidTokenAmount(address tokenAddress_, uint256 amount_);
+error NotApprovedOrOwner(address sender_, uint256 nftId_);
 
 contract Wrapper is ERC721, Ownable {
     uint8 private _protocolFee;
@@ -16,15 +21,56 @@ contract Wrapper is ERC721, Ownable {
 
     mapping(address => bool) private _allowedTokens;
     mapping(uint256 => address[]) private _nftToTokens;
+    mapping(uint256 => mapping(address => uint256)) private _nftToTokenAmounts;
 
     constructor(string memory name, string memory symbol, address uniswapRouterAddress) ERC721(name, symbol) {
         if (uniswapRouterAddress == address(0)) revert InvalidAddress(uniswapRouterAddress);
         _uniswapRouterAddress = uniswapRouterAddress;
     }
 
-    function mint() external {}
+    function mint(uint256 nftId, address[] calldata tokenAddresses, uint256[] calldata tokenAmounts) external {
+        if (tokenAddresses.length != tokenAmounts.length)
+            revert InvalidArrayLength(tokenAddresses.length, tokenAmounts.length);
 
-    function burn() external {}
+        uint256 len = tokenAddresses.length;
+        for (uint256 i = 0; i < len; ) {
+            address tokenAddress = tokenAddresses[i];
+            uint256 tokenAmount = tokenAmounts[i];
+
+            if (!_allowedTokens[tokenAddress]) revert TokenNotAllowed(tokenAddress);
+            if (tokenAmount == 0) revert InvalidTokenAmount(tokenAddress, tokenAmount);
+
+            IERC20(tokenAddress).transferFrom(msg.sender, address(this), tokenAmount);
+            _nftToTokenAmounts[nftId][tokenAddress] += tokenAmount;
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        _nftToTokens[nftId] = tokenAddresses;
+        _safeMint(msg.sender, nftId);
+    }
+
+    function burn(uint256 nftId) external {
+        if (!_isApprovedOrOwner(msg.sender, nftId)) revert NotApprovedOrOwner(msg.sender, nftId);
+
+        address[] memory tokenAddresses = _nftToTokens[nftId];
+        uint256 len = tokenAddresses.length;
+        for (uint256 i = 0; i < len; ) {
+            address tokenAddress = tokenAddresses[i];
+            uint256 amount = (_nftToTokenAmounts[nftId][tokenAddress] * 995) / 1000;
+
+            IERC20(tokenAddress).transferFrom(address(this), msg.sender, amount);
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        delete _nftToTokens[nftId];
+        _burn(nftId);
+    }
 
     function withdraw() external onlyOwner {}
 
