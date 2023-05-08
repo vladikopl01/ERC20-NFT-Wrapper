@@ -55,7 +55,6 @@ contract Wrapper is ERC721, Ownable {
             if (tokenAmount == 0) revert InvalidTokenAmount(tokenAddress, tokenAmount);
 
             IERC20(tokenAddress).transferFrom(msg.sender, address(this), tokenAmount);
-            _nftToTokenAmounts[nftId][tokenAddress] += tokenAmount;
 
             unchecked {
                 ++i;
@@ -63,6 +62,7 @@ contract Wrapper is ERC721, Ownable {
         }
 
         _nftToTokens[nftId] = tokenAddresses;
+        _nftToTokenAmounts[nftId] = tokenAmounts;
         _addTokenToEnumeration(nftId);
         _safeMint(msg.sender, nftId);
     }
@@ -71,10 +71,11 @@ contract Wrapper is ERC721, Ownable {
         if (!_isApprovedOrOwner(msg.sender, nftId)) revert NotApprovedOrOwner(msg.sender, nftId);
 
         address[] memory tokenAddresses = _nftToTokens[nftId];
+        uint256[] memory tokenAmounts = _nftToTokenAmounts[nftId];
         uint256 len = tokenAddresses.length;
         for (uint256 i = 0; i < len; ) {
             address tokenAddress = tokenAddresses[i];
-            uint256 amount = (_nftToTokenAmounts[nftId][tokenAddress] * 995) / 1000;
+            uint256 amount = (tokenAmounts[i] * 995) / 1000;
 
             IERC20(tokenAddress).transferFrom(address(this), msg.sender, amount);
 
@@ -102,25 +103,20 @@ contract Wrapper is ERC721, Ownable {
 
                 uint256 amount = (tokenAmount * _protocolFee) / 1000;
 
-                address[] memory path = new address[](3);
-                path[0] = tokenAddress;
-                path[1] = ISwapRouter(_uniswapRouterAddress).WETH9();
-                path[2] = _USDC_ADDRESS;
-
                 IERC20(tokenAddress).approve(_uniswapRouterAddress, amount);
 
-                ISwapRouter(_uniswapRouterAddress).exactInputSingle(
-                    ISwapRouter.ExactInputSingleParams({
-                        tokenIn: tokenAddress,
-                        tokenOut: _USDC_ADDRESS,
-                        fee: 3000,
-                        recipient: address(this),
-                        deadline: block.timestamp,
-                        amountIn: amount,
-                        amountOutMinimum: 0,
-                        sqrtPriceLimitX96: 0
-                    })
-                );
+                ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams({
+                    tokenIn: tokenAddress,
+                    tokenOut: _USDC_ADDRESS,
+                    fee: 3000,
+                    recipient: address(this),
+                    deadline: block.timestamp,
+                    amountIn: amount,
+                    amountOutMinimum: 0,
+                    sqrtPriceLimitX96: 0
+                });
+
+                ISwapRouter(_uniswapRouterAddress).exactInputSingle(params);
 
                 IERC20(_USDC_ADDRESS).transferFrom(
                     address(this),
