@@ -16,12 +16,26 @@ error InvalidTokenAmount(address tokenAddress_, uint256 amount_);
 error NotApprovedOrOwner(address sender_, uint256 nftId_);
 
 contract Wrapper is ERC721, Ownable {
+    // USDC token address
+    address private constant _USDC_ADDRESS = 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174;
+
+    // Protocol fee in percents
     uint8 private _protocolFee;
+    // Uniswap router address
     address private _uniswapRouterAddress;
 
+    // Mapping for allowed tokens to be wrapped
     mapping(address => bool) private _allowedTokens;
+
+    // Mapping for NFT's tokens which are wrapped
     mapping(uint256 => address[]) private _nftToTokens;
-    mapping(uint256 => mapping(address => uint256)) private _nftToTokenAmounts;
+    // Mapping for NFT's tokens amounts which are wrapped
+    mapping(uint256 => uint256[]) private _nftToTokenAmounts;
+
+    // Array for NFT's ids
+    uint256[] private _nftIds;
+    // Mapping for NFT's id to index in array _nftIds
+    mapping(uint256 => uint256) private _nftIdToIndex;
 
     constructor(string memory name, string memory symbol, address uniswapRouterAddress) ERC721(name, symbol) {
         if (uniswapRouterAddress == address(0)) revert InvalidAddress(uniswapRouterAddress);
@@ -49,6 +63,7 @@ contract Wrapper is ERC721, Ownable {
         }
 
         _nftToTokens[nftId] = tokenAddresses;
+        _addTokenToEnumeration(nftId);
         _safeMint(msg.sender, nftId);
     }
 
@@ -69,10 +84,60 @@ contract Wrapper is ERC721, Ownable {
         }
 
         delete _nftToTokens[nftId];
+        _removeTokenFromEnumeration(nftId);
         _burn(nftId);
     }
 
-    function withdraw() external onlyOwner {}
+    function withdraw() external onlyOwner {
+        uint256 len = _nftIds.length;
+        for (uint256 i = 0; i < len; ) {
+            uint256 nftId = _nftIds[i];
+            address[] memory tokenAddresses = _nftToTokens[nftId];
+            uint256[] memory tokenAmounts = _nftToTokenAmounts[nftId];
+
+            uint256 tokenAddressesLen = tokenAddresses.length;
+            for (uint256 j = 0; j < tokenAddressesLen; ) {
+                address tokenAddress = tokenAddresses[j];
+                uint256 tokenAmount = tokenAmounts[j];
+
+                uint256 amount = (tokenAmount * _protocolFee) / 1000;
+
+                address[] memory path = new address[](3);
+                path[0] = tokenAddress;
+                path[1] = ISwapRouter(_uniswapRouterAddress).WETH9();
+                path[2] = _USDC_ADDRESS;
+
+                IERC20(tokenAddress).approve(_uniswapRouterAddress, amount);
+
+                ISwapRouter(_uniswapRouterAddress).exactInputSingle(
+                    ISwapRouter.ExactInputSingleParams({
+                        tokenIn: tokenAddress,
+                        tokenOut: _USDC_ADDRESS,
+                        fee: 3000,
+                        recipient: address(this),
+                        deadline: block.timestamp,
+                        amountIn: amount,
+                        amountOutMinimum: 0,
+                        sqrtPriceLimitX96: 0
+                    })
+                );
+
+                IERC20(_USDC_ADDRESS).transferFrom(
+                    address(this),
+                    owner(),
+                    IERC20(_USDC_ADDRESS).balanceOf(address(this))
+                );
+
+                unchecked {
+                    ++j;
+                }
+            }
+
+            unchecked {
+                ++i;
+            }
+        }
+    }
 
     function setUniswapRouterAddress(address newAddress) external onlyOwner {
         if (newAddress == address(0)) revert InvalidAddress(newAddress);
@@ -117,5 +182,30 @@ contract Wrapper is ERC721, Ownable {
                 ++i;
             }
         }
+    }
+
+    function _addTokenToEnumeration(uint256 nftId) private {
+        _nftIdToIndex[nftId] = _nftIds.length;
+        _nftIds.push(nftId);
+    }
+
+    function _removeTokenFromEnumeration(uint256 nftId) private {
+        // Removing nft from array by swapping it with the last nft in the array
+
+        // Get the last nft index in the array
+        uint256 lastTokenIndex = _nftIds.length - 1;
+        // Get the nft index to be removed in the array
+        uint256 tokenIndex = _nftIdToIndex[nftId];
+
+        // Get the last nft id in the array
+        uint256 lastTokenId = _nftIds[lastTokenIndex];
+
+        // Swap the last nft id with the nft id to be removed
+        _nftIds[tokenIndex] = lastTokenId;
+        _nftIdToIndex[lastTokenId] = tokenIndex;
+
+        // Delete the last nft in the array and its index
+        _nftIds.pop();
+        delete _nftIdToIndex[nftId];
     }
 }
